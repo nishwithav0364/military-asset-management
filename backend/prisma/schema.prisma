@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  BASE_COMMANDER
+  LOGISTICS_OFFICER
+}
+
+enum StockKind {
+  PURCHASE
+  TRANSFER_IN
+  TRANSFER_OUT
+  ASSIGN
+  RETURN
+  EXPEND
+}
+
+model Base {
+  id                  Int          @id @default(autoincrement())
+  name                String       @unique
+  code                String       @unique
+  users               User[]
+  purchases           Purchase[]
+  transfersFrom       Transfer[]   @relation("TransferFrom")
+  transfersTo         Transfer[]   @relation("TransferTo")
+  assignments         Assignment[]
+  stockEvents         StockEvent[]
+}
+
+model EquipmentType {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  category    String
+  unit        String       @default("units")
+  purchases   Purchase[]
+  transfers   Transfer[]
+  assignments Assignment[]
+  stockEvents StockEvent[]
+}
+
+model User {
+  id             Int          @id @default(autoincrement())
+  name           String
+  email          String       @unique
+  passwordHash   String
+  role           Role
+  baseId         Int?
+  base           Base?        @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  purchases       Purchase[]
+  transfers       Transfer[]
+  assignments     Assignment[]
+  stockEvents     StockEvent[]
+  auditLogs       AuditLog[]
+}
+
+model Purchase {
+  id              Int          @id @default(autoincrement())
+  baseId          Int
+  equipmentTypeId Int
+  quantity        Int
+  supplier        String
+  purchasedAt     DateTime     @default(now()) @db.Timestamptz(3)
+  createdBy       Int
+  base            Base         @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  equipmentType   EquipmentType @relation(fields: [equipmentTypeId], references: [id], onDelete: Restrict)
+  creator         User         @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([baseId, purchasedAt])
+}
+
+model Transfer {
+  id              Int          @id @default(autoincrement())
+  fromBaseId      Int
+  toBaseId        Int
+  equipmentTypeId Int
+  quantity        Int
+  reference       String       @unique
+  transferredAt  DateTime     @default(now()) @db.Timestamptz(3)
+  createdBy       Int
+  source          Base         @relation("TransferFrom", fields: [fromBaseId], references: [id], onDelete: Restrict)
+  destination     Base         @relation("TransferTo", fields: [toBaseId], references: [id], onDelete: Restrict)
+  equipmentType   EquipmentType @relation(fields: [equipmentTypeId], references: [id], onDelete: Restrict)
+  creator         User         @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([transferredAt])
+  @@index([fromBaseId, transferredAt])
+  @@index([toBaseId, transferredAt])
+}
+
+model Assignment {
+  id               Int          @id @default(autoincrement())
+  baseId           Int
+  equipmentTypeId  Int
+  personnel        String
+  quantity         Int
+  returnedQuantity Int          @default(0)
+  expendedQuantity Int          @default(0)
+  assignedAt       DateTime     @default(now()) @db.Timestamptz(3)
+  createdBy        Int
+  base             Base         @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  equipmentType    EquipmentType @relation(fields: [equipmentTypeId], references: [id], onDelete: Restrict)
+  creator          User         @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([baseId, assignedAt])
+}
+
+model StockEvent {
+  id              Int          @id @default(autoincrement())
+  baseId          Int
+  equipmentTypeId Int
+  kind            StockKind
+  quantity        Int
+  reference       String
+  occurredAt      DateTime     @default(now()) @db.Timestamptz(3)
+  createdBy       Int
+  base            Base         @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  equipmentType   EquipmentType @relation(fields: [equipmentTypeId], references: [id], onDelete: Restrict)
+  creator         User         @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([baseId, occurredAt])
+  @@index([equipmentTypeId, occurredAt])
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  actorId   Int
+  action    String
+  entity    String
+  entityId  Int
+  details   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  actor     User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+}

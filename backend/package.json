@@ -4,17 +4,23 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "test": "node --test"
+    "dev": "tsx watch src/server.ts",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:import-sqlite": "tsx scripts/import-sqlite.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@prisma/client": "^7.10.0",
+    "@prisma/client": "6.19.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
@@ -31,8 +37,11 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.10",
     "@types/node": "^26.6.2",
-    "prisma": "^8.0.0-rc.17",
+    "@types/supertest": "^6.0.3",
+    "prisma": "6.19.0",
+    "supertest": "^7.3.0",
     "tsx": "^4.23.15",
+    "vitest": "^5.0.2",
     "typescript": "^6.0.3"
   }
 }

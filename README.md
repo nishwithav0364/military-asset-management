@@ -6,19 +6,22 @@ Asset Command is a full-stack equipment logistics demo for tracking inventory, p
 
 - **Frontend:** React 19, TypeScript, Vite, Axios, and Lucide icons.
 - **API:** Node.js 24, Express 5, JWT authentication, Zod validation, Helmet, and Morgan request logging.
-- **Database:** SQLite via Node's built-in `node:sqlite` API. It provides relational tables, foreign keys, checks, and atomic write transactions without a separate local database service. The database file is created at `backend/data/assets.db` on first startup.
+- **Database:** PostgreSQL with Prisma ORM. PostgreSQL provides relational constraints, JSONB audit details, and atomic multi-record transactions; Prisma gives the app typed access and versioned migrations.
 
-The embedded SQLite choice makes the take-home demo easy to run and inspect. For a hosted service, attach persistent storage to the API host or migrate the same relational model to PostgreSQL before using an ephemeral container. The built-in Node SQLite API is experimental in Node 24, so pin the runtime version for a deployment.
+The same PostgreSQL schema is used in local development and production. Docker Compose provisions it locally; hosted deployments can use a managed PostgreSQL provider such as Neon.
 
 ## Local Setup
 
-Prerequisite: Node.js 24 or newer and npm.
+Prerequisites: Node.js 24 or newer, npm, and Docker Desktop with its engine running.
 
-In one terminal, configure and start the API:
+Start PostgreSQL and configure the API:
 
 ```powershell
+docker compose up -d postgres
 Copy-Item backend/.env.example backend/.env
 npm --prefix backend install
+npm --prefix backend run db:deploy
+npm --prefix backend run db:seed
 npm --prefix backend run dev
 ```
 
@@ -30,9 +33,11 @@ npm --prefix frontend install
 npm --prefix frontend run dev
 ```
 
-Open `http://localhost:5173`. The API health check is `http://localhost:4000/api/health`. The SQLite file and seed data persist across restarts. To reset the demo, stop the API and remove `backend/data/assets.db`; the next start creates and seeds a clean database.
+Open `http://localhost:5173`. The API health check is `http://localhost:4000/api/health`. PostgreSQL data persists in the Docker volume `asset-command-postgres` across API restarts.
 
-The production frontend can be built with `npm --prefix frontend run build`; the API can be type-checked with `npm --prefix backend run build` and started with `npm --prefix backend start`.
+To reset local data, remove the Compose volume with `docker compose down -v`, then rerun the migration and seed commands. This permanently deletes the local database contents.
+
+The production frontend can be built with `npm --prefix frontend run build`; the API can be built with `npm --prefix backend run build` and started with `npm --prefix backend start`.
 
 ## Demo Accounts
 
@@ -52,7 +57,7 @@ The stock-event ledger is the source of truth. For each base and equipment type:
 
 Assignments reduce available stock. A return restores available stock. Expenditure decreases the outstanding assigned quantity; it is reported separately and is not subtracted a second time from base stock. Net movement for the selected period follows the requested definition: `purchases + transfer in - transfer out`.
 
-Transfers write the transfer record, paired source/destination stock events, and audit entry in one SQLite transaction. Assignment, return, expenditure, and purchase writes also commit their ledger and audit records together. Foreign keys and quantity checks protect relational consistency.
+Transfers write the transfer record, paired source/destination stock events, and audit entry in one PostgreSQL transaction. Assignment, return, expenditure, and purchase writes also commit their ledger and audit records together. Foreign keys and quantity checks protect relational consistency.
 
 ## Data Model
 
@@ -92,4 +97,42 @@ List and dashboard endpoints accept applicable `baseId`, `equipmentId`, `from`, 
 
 The seed contains two fictional bases and three equipment classes. A transfer supports one equipment type per transaction. Authentication has seeded accounts but no user administration, password reset, or token revocation UI. Audit listing is capped at 100 entries; larger deployments should add pagination, retention controls, backups, and monitoring. This is a take-home demonstration and must not contain real operational or sensitive military data.
 
-The app is ready to run locally. Hosting links require external hosting/database accounts and environment variables; no credentials or hosted services are included in this workspace.
+## Automated Tests
+
+Frontend tests run with Vitest, jsdom, and React Testing Library:
+
+```powershell
+npm --prefix frontend test
+```
+
+Backend Supertest tests require a **dedicated disposable PostgreSQL database**. Never set `TEST_DATABASE_URL` to a database containing data you need; the suite clears its test database before each case. With the Compose database running, create the test database and run:
+
+```powershell
+docker compose exec -T postgres createdb -U asset_command asset_command_test
+$env:TEST_DATABASE_URL = "postgresql://asset_command:asset_command_dev@localhost:5433/asset_command_test?schema=public"
+$env:DATABASE_URL = $env:TEST_DATABASE_URL
+npm --prefix backend run db:deploy
+npm --prefix backend test
+```
+
+The API tests cover authentication, RBAC, base scope, dashboard accounting, purchases, atomic transfers, assignments, returns, expenditure, and audit logs.
+
+## SQLite Import
+
+If an earlier SQLite demo database at `backend/data/assets.db` contains records you want to keep, point `DATABASE_URL` at an empty, migrated PostgreSQL database and run:
+
+```powershell
+npm --prefix backend run db:deploy
+npm --prefix backend run db:import-sqlite
+```
+
+The importer preserves record IDs, password hashes, timestamps, ledger entries, and audit history. It refuses to import into a PostgreSQL database that already contains base records.
+
+## Free Demo Deployment
+
+- **Frontend:** Vercel Hobby; set the project root to `frontend` and `VITE_API_URL` to the Render API URL plus `/api`.
+- **Backend:** Render Free Web Service; set build to `npm --prefix backend install && npm --prefix backend run build`, start to `npm --prefix backend start`, Node to 24, and health check to `/api/health`.
+- **Database:** Neon Free PostgreSQL; set Render's `DATABASE_URL` to its connection string. No Render disk is needed after moving to PostgreSQL.
+- Set `NODE_ENV=production`, a private random `JWT_SECRET`, `SEED_DEMO_DATA=true`, and `FRONTEND_ORIGIN` to the Vercel URL in Render.
+
+Free services may sleep or scale to zero and have provider usage limits. Database persistence is separate from API availability; monitor the database provider's quotas and back up data you need to retain. Demo credentials are public by design and are only for synthetic take-home data.
